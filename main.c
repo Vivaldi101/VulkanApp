@@ -45,6 +45,10 @@ typedef struct VulkanContext
 static VulkanContext VulkanInitContext(HWND windowHandle)
 {
     VulkanContext result = {0};
+    Pre(!result.instance);
+    Pre(!result.surface);
+    Pre(!result.physicalDevice);
+    Pre(!result.logicalDevice);
 
     uint32_t extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
@@ -117,15 +121,53 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
     result.physicalDevice = devices[0];
 
+    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties = {0};
+    vkGetPhysicalDeviceMemoryProperties(result.physicalDevice, &physicalDeviceMemoryProperties);
+
+    VkDeviceQueueCreateInfo queueInfo = {0};
+    queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueInfo.queueFamilyIndex = 0;
+    queueInfo.queueCount = 1;
+    const float queuePriorities[] = {1.0f};
+    queueInfo.pQueuePriorities = queuePriorities;
+
     VkDeviceCreateInfo deviceCreateInfo = {0};
+    extensionCount = 0;
+    if (!VK_VALID(vkEnumerateDeviceExtensionProperties(result.physicalDevice, 0, &extensionCount, 0)))
+        Post(0);
+
+    Invariant(extensionCount > 0);
+    extensions = _malloca(extensionCount * sizeof(VkExtensionProperties));
+    Invariant(extensions);
+
+    if (!VK_VALID(vkEnumerateDeviceExtensionProperties(result.physicalDevice, 0, &extensionCount, extensions)))
+        Post(0);
+
+    extensionNames = _malloca(extensionCount * sizeof(const char*));
+    Invariant(extensionNames);
+    for (size_t i = 0; i < extensionCount; ++i)
+        extensionNames[i] = extensions[i].extensionName;
+
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.pQueueCreateInfos = &queueInfo;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.enabledExtensionCount = extensionCount;
+    deviceCreateInfo.ppEnabledExtensionNames = extensionNames;
+    deviceCreateInfo.enabledLayerCount = 0;
+    deviceCreateInfo.ppEnabledLayerNames = 0;
+
+    VkPhysicalDeviceFeatures physicalFeatures = {0};
+    physicalFeatures.shaderClipDistance = VK_TRUE;
+    deviceCreateInfo.pEnabledFeatures = &physicalFeatures;
+
     if (!VK_VALID(vkCreateDevice(result.physicalDevice, &deviceCreateInfo, 0, &result.logicalDevice)))
         Post(0);
 
-    // TODO: Get the logical devices
-
+    // post conditions for the context
     Post(result.instance);
     Post(result.surface);
     Post(result.physicalDevice);
+    Post(result.logicalDevice);
 
     return result;
 }
@@ -134,11 +176,10 @@ static void VulkanUpdate()
 {
 }
 
-static void VulkanReset(VkInstance vkInstance)
+static void VulkanReset(VulkanContext* context)
 {
-    Post(vkInstance);
-    vkDestroyInstance(vkInstance, 0);
-
+    Pre(context->instance);
+    vkDestroyInstance(context->instance, 0);
 }
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdshow)
@@ -201,7 +242,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdsho
         }
     }
 
-    VulkanReset(context.instance);
+    VulkanReset(&context);
 
     return 0;
 }
