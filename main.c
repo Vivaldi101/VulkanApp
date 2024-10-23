@@ -40,16 +40,14 @@ typedef struct VulkanContext
     VkSurfaceKHR surface;
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
+    VkSwapchainKHR swapChain;
+    uint32_t    surfaceWidth;
+    uint32_t    surfaceHeight;
 } VulkanContext;
 
 static VulkanContext VulkanInitContext(HWND windowHandle)
 {
     VulkanContext result = {0};
-    Pre(!result.instance);
-    Pre(!result.surface);
-    Pre(!result.physicalDevice);
-    Pre(!result.logicalDevice);
-
     uint32_t extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
         Post(0);
@@ -163,21 +161,51 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     if (!VK_VALID(vkCreateDevice(result.physicalDevice, &deviceCreateInfo, 0, &result.logicalDevice)))
         Post(0);
 
+
+    VkSurfaceCapabilitiesKHR surfaceCaps = {0};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(result.physicalDevice, result.surface, &surfaceCaps);
+
+    VkExtent2D surfaceExtent = surfaceCaps.currentExtent;
+    result.surfaceWidth = surfaceExtent.width;
+    result.surfaceHeight = surfaceExtent.height;
+
+    VkSwapchainCreateInfoKHR swapChainInfo = {0};
+    swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapChainInfo.surface = result.surface;
+    swapChainInfo.minImageCount = 2;
+    swapChainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    swapChainInfo.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+    swapChainInfo.imageExtent = surfaceExtent;
+    swapChainInfo.imageArrayLayers = 1;
+    swapChainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    swapChainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapChainInfo.presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+    swapChainInfo.clipped = true;
+    swapChainInfo.oldSwapchain = 0;
+
+    if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &swapChainInfo, 0, &result.swapChain)))
+        Post(0);
+
     // post conditions for the context
     Post(result.instance);
     Post(result.surface);
     Post(result.physicalDevice);
     Post(result.logicalDevice);
+    //Post(result.swapChain);
 
     return result;
 }
 
-static void VulkanUpdate()
+static void VulkanUpdate(VulkanContext* context)
 {
+    Pre(context);
 }
 
 static void VulkanReset(VulkanContext* context)
 {
+    Pre(context);
     Pre(context->instance);
     vkDestroyInstance(context->instance, 0);
 }
@@ -234,12 +262,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdsho
         if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
-            {
                 break;
-            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        VulkanUpdate(&context);
     }
 
     VulkanReset(&context);
