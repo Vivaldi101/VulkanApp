@@ -15,6 +15,7 @@
 #define VK_VALID(v) (v) == VK_SUCCESS
 #endif
 
+#define ArrayCount(a) sizeof(a) / sizeof(a[0])
 #define Halt abort();
 
 #define Pre(a) if(!(a)) Halt
@@ -208,7 +209,6 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     if (!VK_VALID(vkCreateDevice(result.physicalDevice, &deviceCreateInfo, 0, &result.logicalDevice)))
         Post(0);
 
-
     VkSurfaceCapabilitiesKHR surfaceCaps = {0};
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(result.physicalDevice, result.surface, &surfaceCaps);
 
@@ -228,11 +228,20 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     swapChainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapChainInfo.presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+    swapChainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapChainInfo.clipped = true;
     swapChainInfo.oldSwapchain = 0;
 
     if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &swapChainInfo, 0, &result.swapChain)))
+        Post(0);
+
+    uint32_t swapChainCount = 0;
+	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
+        Post(0);
+
+    VkImage* swapChainImages = _malloca(swapChainCount*sizeof(VkImage));
+
+	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
         Post(0);
 
     // post conditions for the context
@@ -240,7 +249,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(result.surface);
     Post(result.physicalDevice);
     Post(result.logicalDevice);
-    //Post(result.swapChain);
+    Post(result.swapChain);
 
     return result;
 }
