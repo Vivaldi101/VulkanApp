@@ -11,6 +11,8 @@
 
 #include <vulkan/vulkan.h>
 
+typedef uint32_t u32;
+
 #ifndef VK_VALID
 #define VK_VALID(v) (v) == VK_SUCCESS
 #endif
@@ -42,8 +44,9 @@ typedef struct VulkanContext
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
     VkSwapchainKHR swapChain;
-    uint32_t    surfaceWidth;
-    uint32_t    surfaceHeight;
+    u32    surfaceWidth;
+    u32    surfaceHeight;
+    u32    swapChainCount;
 } VulkanContext;
 
 // Function to dynamically load vkCreateDebugUtilsMessengerEXT
@@ -81,7 +84,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(
 static VulkanContext VulkanInitContext(HWND windowHandle)
 {
     VulkanContext result = {0};
-    uint32_t extensionCount = 0;
+    u32 extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
         Post(0);
 
@@ -153,7 +156,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
     vkWin32SurfaceFunction(result.instance, &win32SurfaceInfo, 0, &result.surface);
 
-    uint32_t deviceCount = 0;
+    u32 deviceCount = 0;
     if (!VK_VALID(vkEnumeratePhysicalDevices(result.instance, &deviceCount, 0)))
         Post(0);
     Post(deviceCount > 0);   // Just use the first device for now
@@ -235,14 +238,80 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &swapChainInfo, 0, &result.swapChain)))
         Post(0);
 
-    uint32_t swapChainCount = 0;
+    u32 swapChainCount = 0;
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
         Post(0);
 
     VkImage* swapChainImages = _malloca(swapChainCount*sizeof(VkImage));
+    if (!swapChainImages)
+        Post(0);
 
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
         Post(0);
+
+    VkImageView* imageViews = _malloca(swapChainCount*sizeof(VkImageView));
+    if (!imageViews)
+        Post(0);
+
+	result.swapChainCount = swapChainCount;
+    for (u32 i = 0; i < swapChainCount; ++i) {
+        VkImageViewCreateInfo info = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_B8G8R8A8_UNORM,
+            .components.r = VK_COMPONENT_SWIZZLE_R,
+            .components.g = VK_COMPONENT_SWIZZLE_G,
+            .components.b = VK_COMPONENT_SWIZZLE_B,
+            .components.a = VK_COMPONENT_SWIZZLE_A,
+            .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .subresourceRange.baseMipLevel = 0,
+            .subresourceRange.levelCount = 1,
+            .subresourceRange.baseArrayLayer = 0,
+            .subresourceRange.layerCount = 1,
+            .image = swapChainImages[i]
+        };
+
+        if (!VK_VALID(vkCreateImageView(result.logicalDevice, &info, 0, &imageViews[i])))
+            Post(0);
+    }
+
+    u32 queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(result.physicalDevice, &queueFamilyCount, 0);
+    VkQueueFamilyProperties* queueProperties = _malloca(queueFamilyCount*sizeof(VkQueueFamilyProperties));
+    if (!queueProperties)
+        Post(0);
+    vkGetPhysicalDeviceQueueFamilyProperties(result.physicalDevice, &queueFamilyCount, queueProperties);
+
+    VkQueue presentQueue = 0;
+    vkGetDeviceQueue(result.logicalDevice, 0, 0, &presentQueue);
+
+	// TODO: Use the above similar to these
+	// TODO: Wrap these
+    VkCommandPool commandPool = 0;
+    {
+        VkCommandPoolCreateInfo info =
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .pNext = 0,
+            .queueFamilyIndex = 0,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+        };
+        if (!VK_VALID(vkCreateCommandPool(result.logicalDevice, &info, 0, &commandPool)))
+            Post(0);
+    }
+
+    VkCommandBuffer drawBuffer = 0;
+    {
+        VkCommandBufferAllocateInfo info =
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = commandPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        if (!VK_VALID(vkAllocateCommandBuffers(result.logicalDevice, &info, &drawBuffer)))
+            Post(0);
+    }
 
     // post conditions for the context
     Post(result.instance);
@@ -250,6 +319,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(result.physicalDevice);
     Post(result.logicalDevice);
     Post(result.swapChain);
+    Post(result.swapChainCount > 0);
 
     return result;
 }
