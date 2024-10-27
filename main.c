@@ -45,6 +45,38 @@ typedef struct VulkanContext
     uint32_t    surfaceHeight;
 } VulkanContext;
 
+// Function to dynamically load vkCreateDebugUtilsMessengerEXT
+static VkResult VulkanCreateDebugUtilsMessengerEXT(VkInstance instance,
+                                      const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                      const VkAllocationCallbacks* pAllocator,
+                                      VkDebugUtilsMessengerEXT* pDebugMessenger) {
+    PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    if (!func)
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+}
+
+static void DebugMessage(const char* format, ...)
+{
+    char temp[1024];
+    va_list args;
+    va_start(args, format);
+    wvsprintfA(temp, format, args);
+    va_end(args);
+    OutputDebugStringA(temp);
+}
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData) {
+
+    DebugMessage("Validation layer: %s\n", pCallbackData->pMessage);
+
+    return VK_FALSE;
+}
+
 static VulkanContext VulkanInitContext(HWND windowHandle)
 {
     VulkanContext result = {0};
@@ -64,6 +96,8 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     for (size_t i = 0; i < extensionCount; ++i)
         extensionNames[i] = extensions[i].extensionName;
 
+    const char* validationLayers[] = {"VK_LAYER_KHRONOS_validation"};
+
     VkApplicationInfo appInfo = {0};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "VulkanApp";
@@ -75,12 +109,25 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     VkInstanceCreateInfo instanceInfo = {0};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
-    instanceInfo.enabledLayerCount = 0;
-    instanceInfo.ppEnabledLayerNames = 0;
+    instanceInfo.enabledLayerCount = ArrayCount(validationLayers);
+    instanceInfo.ppEnabledLayerNames = validationLayers;
     instanceInfo.enabledExtensionCount = extensionCount;
     instanceInfo.ppEnabledExtensionNames = extensionNames;
 
     if (!VK_VALID(vkCreateInstance(&instanceInfo, 0, &result.instance)))
+        Post(0);
+
+    VkDebugUtilsMessengerEXT debugMessenger;
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
+    debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    debugCreateInfo.pfnUserCallback = VulkanDebugCallback;
+
+    if (!VK_VALID(VulkanCreateDebugUtilsMessengerEXT(result.instance, &debugCreateInfo, 0, &debugMessenger)))
         Post(0);
 
     bool isWin32Surface = false;
