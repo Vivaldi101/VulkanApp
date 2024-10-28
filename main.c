@@ -1,4 +1,3 @@
-
 #define WIN32_LEAN_AND_MEAN
 #define VK_USE_PLATFORM_WIN32_KHR
 
@@ -8,7 +7,6 @@
 #include <stdlib.h>
 #include <malloc.h>
 #include <stdbool.h>
-
 #include <vulkan/vulkan.h>
 
 typedef uint32_t u32;
@@ -313,7 +311,43 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
             Post(0);
     }
 
+    VkFramebuffer* frameBuffers = 0;
+    VkRenderPass renderPass = 0;
+
+    VkAttachmentDescription pass[1] = {0};
+    pass[0].format = VK_FORMAT_B8G8R8A8_UNORM;
+    pass[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    pass[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    pass[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    pass[0].stencilLoadOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    pass[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    pass[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    pass[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference ref = {0};
+    ref.attachment = 0;
+    ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass = {0};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &ref;
+
+    {
+        VkRenderPassCreateInfo info = 
+        {
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .attachmentCount = 1,
+            .pAttachments = pass,
+            .subpassCount = 1,
+            .pSubpasses = &subpass,
+        };
+        if (!VK_VALID(vkCreateRenderPass(result.logicalDevice, &info, 0, &renderPass)))
+            Post(0);
+    }
+
     // post conditions for the context
+    // TODO: Add missing components to the context
     Post(result.instance);
     Post(result.surface);
     Post(result.physicalDevice);
