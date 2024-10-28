@@ -1,4 +1,4 @@
-#define WIN32_LEAN_AND_MEAN
+﻿#define WIN32_LEAN_AND_MEAN
 #define VK_USE_PLATFORM_WIN32_KHR
 
 #include <Windows.h>
@@ -35,6 +35,7 @@ static LRESULT CALLBACK WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lpa
     return DefWindowProcW(wnd, msg, wparam, lparam);
 }
 
+#define FRAMEBUFFER_COUNT 2		// This is dumb - we need to query the swapchain count from vulkan
 typedef struct VulkanContext
 {
     VkInstance instance;
@@ -42,6 +43,10 @@ typedef struct VulkanContext
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
     VkSwapchainKHR swapChain;
+    VkCommandBuffer drawCmdBuffer;
+    VkRenderPass renderPass;
+    VkFramebuffer frameBuffers[FRAMEBUFFER_COUNT];	// Normal double buffering
+    VkQueue queue;
     u32    surfaceWidth;
     u32    surfaceHeight;
     u32    swapChainCount;
@@ -240,6 +245,9 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
         Post(0);
 
+	if (swapChainCount != FRAMEBUFFER_COUNT)
+		Post(0);
+
     VkImage* swapChainImages = _malloca(swapChainCount*sizeof(VkImage));
     if (!swapChainImages)
         Post(0);
@@ -282,6 +290,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
     VkQueue presentQueue = 0;
     vkGetDeviceQueue(result.logicalDevice, 0, 0, &presentQueue);
+    result.queue = presentQueue;
 
 	// TODO: Use the above similar to these
 	// TODO: Wrap these
@@ -298,7 +307,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
             Post(0);
     }
 
-    VkCommandBuffer drawBuffer = 0;
+    VkCommandBuffer drawCmdBuffer = 0;
     {
         VkCommandBufferAllocateInfo info =
         {
@@ -307,11 +316,11 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
         };
-        if (!VK_VALID(vkAllocateCommandBuffers(result.logicalDevice, &info, &drawBuffer)))
+        if (!VK_VALID(vkAllocateCommandBuffers(result.logicalDevice, &info, &drawCmdBuffer)))
             Post(0);
+		result.drawCmdBuffer = drawCmdBuffer;
     }
 
-    VkFramebuffer* frameBuffers = 0;
     VkRenderPass renderPass = 0;
 
     VkAttachmentDescription pass[1] = {0};
@@ -344,23 +353,151 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         };
         if (!VK_VALID(vkCreateRenderPass(result.logicalDevice, &info, 0, &renderPass)))
             Post(0);
+		result.renderPass = renderPass;
+    }
+
+    VkImageView frameBufferAttachments = 0;
+    VkFramebuffer* frameBuffers = _malloca(swapChainCount * sizeof(VkFramebuffer));
+    if (!frameBuffers)
+		Post(0);
+    {
+		VkFramebufferCreateInfo info = 
+        {
+			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .attachmentCount = 1,
+            .pAttachments = &frameBufferAttachments,
+            .width = result.surfaceWidth,
+            .height = result.surfaceHeight,
+            .layers = 1,
+            .renderPass = renderPass,
+        };
+        for (u32 i = 0; i < swapChainCount; ++i) {
+			frameBufferAttachments = imageViews[i];
+			if (!VK_VALID(vkCreateFramebuffer(result.logicalDevice, &info, 0, &frameBuffers[i])))
+                Post(0);
+			result.frameBuffers[i] = frameBuffers[i];
+        }
     }
 
     // post conditions for the context
-    // TODO: Add missing components to the context
     Post(result.instance);
     Post(result.surface);
     Post(result.physicalDevice);
     Post(result.logicalDevice);
     Post(result.swapChain);
     Post(result.swapChainCount > 0);
+    Post(result.renderPass);
+    Post(result.frameBuffers);
+    Post(result.queue);
+    Post(result.drawCmdBuffer);
 
     return result;
 }
 
-static void VulkanUpdate(VulkanContext* context)
+static void VulkanRender(VulkanContext* context)
 {
     Pre(context);
+    u32 nextImageIndex = 0;
+
+    if (!VK_VALID(vkAcquireNextImageKHR(context->logicalDevice, context->swapChain, UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &nextImageIndex)))
+        Post(0);
+    {
+        VkCommandBufferBeginInfo info =
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+        if (!VK_VALID(vkBeginCommandBuffer(context->drawCmdBuffer, &info)))
+            Post(0);
+    }
+    {
+        // temporary float that oscilates between 0 and 1
+        // to gradually change the color on the screen
+        static float aa = 0.0f;
+        // slowly increment
+        aa += 0.001f;
+        // when value reaches 1.0 reset to 0
+        if (aa >= 1.0) aa = 0;
+        // activate render pass:
+        // clear color (r,g,b,a)
+        VkClearValue clearValue[] = 
+        { { 1.0f, aa, 1.0f, 1.0f }, // color
+		  { 1.0, 0.0 }				// depth stencil
+        }; 
+
+        // define render pass structure
+        VkRenderPassBeginInfo info = 
+        {
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = context->renderPass,
+            .framebuffer = context->frameBuffers[nextImageIndex],
+        };
+        VkOffset2D a = { 0, 0 };
+        VkExtent2D b = { context->surfaceWidth, context->surfaceHeight };
+        VkRect2D c = { a,b };
+        info.renderArea = c;
+        info.clearValueCount = 2;
+        info.pClearValues = clearValue;
+
+		vkCmdBeginRenderPass(context->drawCmdBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+        {
+			// draw cmds
+        }
+        vkCmdEndRenderPass(context->drawCmdBuffer);
+    }
+
+    if (!VK_VALID(vkEndCommandBuffer(context->drawCmdBuffer)))
+        Post(0);
+
+    // present:
+    // create a fence to inform us when the GPU
+    // has finished processing our commands
+	// setup the type of fence
+    VkFence renderFence;
+    {
+        VkFenceCreateInfo info =
+        {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        };
+        if (!VK_VALID(vkCreateFence(context->logicalDevice, &info, 0, &renderFence)))
+            Post(0);
+    }
+    {
+        VkSubmitInfo info =
+        {
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = VK_NULL_HANDLE,
+            .pWaitDstStageMask = 0,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &context->drawCmdBuffer,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = VK_NULL_HANDLE,
+        };
+        if (!VK_VALID(vkQueueSubmit(context->queue, 1, &info, renderFence)))
+			Post(0);
+    }
+    // wait until the GPU has finished processing the commands
+    if (!VK_VALID(vkWaitForFences(context->logicalDevice, 1, &renderFence, VK_TRUE, UINT64_MAX)))
+		Post(0);
+    vkDestroyFence(context->logicalDevice, renderFence, 0);
+
+    // present the image on the screen (flip the swap-chain image)
+    {
+        VkPresentInfoKHR info =
+        {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext = NULL,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = VK_NULL_HANDLE,
+            .swapchainCount = 1,
+            .pSwapchains = &context->swapChain,
+            .pImageIndices = &nextImageIndex,
+            .pResults = NULL,
+        };
+        if (!VK_VALID(vkQueuePresentKHR(context->queue, &info)))
+			Post(0);
+    }
 }
 
 static void VulkanReset(VulkanContext* context)
@@ -426,7 +563,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdsho
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-        VulkanUpdate(&context);
+        VulkanRender(&context);
     }
 
     VulkanReset(&context);
