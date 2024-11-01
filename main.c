@@ -84,21 +84,38 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(
     return VK_FALSE;
 }
 
+static bool VulkanIsDeviceCompatible(VkPhysicalDevice device)
+{
+    VkPhysicalDeviceMemoryProperties memoryProperties = {0};
+    VkPhysicalDeviceFeatures features = {0};
+    VkPhysicalDeviceProperties properties = {0};
+    vkGetPhysicalDeviceMemoryProperties(device, &memoryProperties);
+    vkGetPhysicalDeviceFeatures(device, &features);
+    vkGetPhysicalDeviceProperties(device, &properties);
+
+	return (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) && features.geometryShader;
+}
+
+static void* Allocate(size_t size)
+{
+	return _malloca(size);
+}
+
 static VulkanContext VulkanInitContext(HWND windowHandle)
 {
-    VulkanContext result = {0};
+    VulkanContext result = {};
     u32 extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
         Post(0);
 
     Invariant(extensionCount > 0);
-    VkExtensionProperties* extensions = _malloca(extensionCount * sizeof(VkExtensionProperties));
+    VkExtensionProperties* extensions = Allocate(extensionCount * sizeof(VkExtensionProperties));
     Invariant(extensions);
 
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, extensions)))
         Post(0);
 
-    const char** extensionNames = _malloca(extensionCount * sizeof(const char*));
+    const char** extensionNames = Allocate(extensionCount * sizeof(const char*));
     Invariant(extensionNames);
     for (size_t i = 0; i < extensionCount; ++i)
         extensionNames[i] = extensions[i].extensionName;
@@ -164,17 +181,21 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         Post(0);
     Post(deviceCount > 0);   // Just use the first device for now
 
-    VkPhysicalDevice* devices = _malloca(deviceCount * sizeof(VkPhysicalDevice));
+    VkPhysicalDevice* devices = Allocate(deviceCount * sizeof(VkPhysicalDevice));
     if (!devices)
         Post(0);
 
     if (!VK_VALID(vkEnumeratePhysicalDevices(result.instance, &deviceCount, devices)))
         Post(0);
 
-    result.physicalDevice = devices[0];
+    for (u32 i = 0; i < deviceCount; ++i)
+		if (VulkanIsDeviceCompatible(devices[i])) 
+        {
+            result.physicalDevice = devices[i];
+            break;
+        }
 
-    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties = {0};
-    vkGetPhysicalDeviceMemoryProperties(result.physicalDevice, &physicalDeviceMemoryProperties);
+    Post(result.physicalDevice != VK_NULL_HANDLE);
 
     VkDeviceQueueCreateInfo queueInfo = {0};
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -183,37 +204,41 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     const float queuePriorities[] = {1.0f};
     queueInfo.pQueuePriorities = queuePriorities;
 
-    VkDeviceCreateInfo deviceCreateInfo = {0};
     extensionCount = 0;
     if (!VK_VALID(vkEnumerateDeviceExtensionProperties(result.physicalDevice, 0, &extensionCount, 0)))
         Post(0);
 
     Invariant(extensionCount > 0);
-    extensions = _malloca(extensionCount * sizeof(VkExtensionProperties));
+    extensions = Allocate(extensionCount * sizeof(VkExtensionProperties));
     Invariant(extensions);
 
     if (!VK_VALID(vkEnumerateDeviceExtensionProperties(result.physicalDevice, 0, &extensionCount, extensions)))
         Post(0);
 
-    extensionNames = _malloca(extensionCount * sizeof(const char*));
+    extensionNames = Allocate(extensionCount * sizeof(const char*));
     Invariant(extensionNames);
     for (size_t i = 0; i < extensionCount; ++i)
         extensionNames[i] = extensions[i].extensionName;
 
-    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCreateInfo.pQueueCreateInfos = &queueInfo;
-    deviceCreateInfo.queueCreateInfoCount = 1;
-    deviceCreateInfo.enabledExtensionCount = extensionCount;
-    deviceCreateInfo.ppEnabledExtensionNames = extensionNames;
-    deviceCreateInfo.enabledLayerCount = 0;
-    deviceCreateInfo.ppEnabledLayerNames = 0;
+    {
+        VkDeviceCreateInfo info =
+        {
+			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+			.pQueueCreateInfos = &queueInfo,
+			.queueCreateInfoCount = 1,
+			.enabledExtensionCount = extensionCount,
+			.ppEnabledExtensionNames = extensionNames,
+			.enabledLayerCount = 0,
+			.ppEnabledLayerNames = 0,
+        };
 
-    VkPhysicalDeviceFeatures physicalFeatures = {0};
-    physicalFeatures.shaderClipDistance = VK_TRUE;
-    deviceCreateInfo.pEnabledFeatures = &physicalFeatures;
+        VkPhysicalDeviceFeatures physicalFeatures = { 0 };
+        physicalFeatures.shaderClipDistance = VK_TRUE;
+        info.pEnabledFeatures = &physicalFeatures;
 
-    if (!VK_VALID(vkCreateDevice(result.physicalDevice, &deviceCreateInfo, 0, &result.logicalDevice)))
-        Post(0);
+        if (!VK_VALID(vkCreateDevice(result.physicalDevice, &info, 0, &result.logicalDevice)))
+            Post(0);
+    }
 
     VkSurfaceCapabilitiesKHR surfaceCaps = {0};
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(result.physicalDevice, result.surface, &surfaceCaps);
@@ -222,24 +247,27 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     result.surfaceWidth = surfaceExtent.width;
     result.surfaceHeight = surfaceExtent.height;
 
-    VkSwapchainCreateInfoKHR swapChainInfo = {0};
-    swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapChainInfo.surface = result.surface;
-    swapChainInfo.minImageCount = 2;
-    swapChainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
-    swapChainInfo.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    swapChainInfo.imageExtent = surfaceExtent;
-    swapChainInfo.imageArrayLayers = 1;
-    swapChainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    swapChainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapChainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    swapChainInfo.clipped = true;
-    swapChainInfo.oldSwapchain = 0;
-
-    if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &swapChainInfo, 0, &result.swapChain)))
-        Post(0);
+    {
+        VkSwapchainCreateInfoKHR info =
+        {
+			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+			.surface = result.surface,
+			.minImageCount = 2,
+			.imageFormat = VK_FORMAT_B8G8R8A8_UNORM,
+			.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR,
+			.imageExtent = surfaceExtent,
+			.imageArrayLayers = 1,
+			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+			.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+			.presentMode = VK_PRESENT_MODE_FIFO_KHR,
+			.clipped = true,
+			.oldSwapchain = 0,
+        };
+        if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &info, 0, &result.swapChain)))
+            Post(0);
+    }
 
     u32 swapChainCount = 0;
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
@@ -248,20 +276,21 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 	if (swapChainCount != FRAMEBUFFER_COUNT)
 		Post(0);
 
-    VkImage* swapChainImages = _malloca(swapChainCount*sizeof(VkImage));
+    VkImage* swapChainImages = Allocate(swapChainCount*sizeof(VkImage));
     if (!swapChainImages)
         Post(0);
 
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
         Post(0);
 
-    VkImageView* imageViews = _malloca(swapChainCount*sizeof(VkImageView));
+    VkImageView* imageViews = Allocate(swapChainCount*sizeof(VkImageView));
     if (!imageViews)
         Post(0);
 
 	result.swapChainCount = swapChainCount;
     for (u32 i = 0; i < swapChainCount; ++i) {
-        VkImageViewCreateInfo info = {
+        VkImageViewCreateInfo info = 
+        {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = VK_FORMAT_B8G8R8A8_UNORM,
@@ -283,9 +312,10 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
     u32 queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(result.physicalDevice, &queueFamilyCount, 0);
-    VkQueueFamilyProperties* queueProperties = _malloca(queueFamilyCount*sizeof(VkQueueFamilyProperties));
+    VkQueueFamilyProperties* queueProperties = Allocate(queueFamilyCount*sizeof(VkQueueFamilyProperties));
     if (!queueProperties)
         Post(0);
+    Post(queueFamilyCount > 0);
     vkGetPhysicalDeviceQueueFamilyProperties(result.physicalDevice, &queueFamilyCount, queueProperties);
 
     VkQueue presentQueue = 0;
@@ -357,7 +387,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     }
 
     VkImageView frameBufferAttachments = 0;
-    VkFramebuffer* frameBuffers = _malloca(swapChainCount * sizeof(VkFramebuffer));
+    VkFramebuffer* frameBuffers = Allocate(swapChainCount * sizeof(VkFramebuffer));
     if (!frameBuffers)
 		Post(0);
     {
@@ -421,8 +451,9 @@ static void VulkanRender(VulkanContext* context)
         // activate render pass:
         // clear color (r,g,b,a)
         VkClearValue clearValue[] = 
-        { { 1.0f, aa, 1.0f, 1.0f }, // color
-		  { 1.0, 0.0 }				// depth stencil
+        { 
+            { 1.0f, aa, 1.0f, 1.0f },	// color
+			{ 1.0, 0.0 }				// depth stencil
         }; 
 
         // define render pass structure
