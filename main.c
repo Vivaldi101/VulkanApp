@@ -24,6 +24,13 @@ typedef uint32_t u32;
 #define Implies(a, b) (!(a) || (b))
 #define Iff(a, b) ((a) == (b))
 
+// TODO:
+// Use the push buffer style macros
+static void* Allocate(size_t size)
+{
+	return _malloca(size);
+}
+
 static LRESULT CALLBACK WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg)
@@ -84,21 +91,49 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(
     return VK_FALSE;
 }
 
-static bool VulkanIsDeviceCompatible(VkPhysicalDevice device)
+typedef struct QueueFamilyIndices 
 {
-    VkPhysicalDeviceMemoryProperties memoryProperties = {0};
-    VkPhysicalDeviceFeatures features = {0};
-    VkPhysicalDeviceProperties properties = {0};
-    vkGetPhysicalDeviceMemoryProperties(device, &memoryProperties);
-    vkGetPhysicalDeviceFeatures(device, &features);
-    vkGetPhysicalDeviceProperties(device, &properties);
+    u32 graphicsFamily;
+    u32 presentFamily;
+    bool isValid;
+} QueueFamilyIndices;
 
-	return (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) && features.geometryShader;
+static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) 
+{
+    QueueFamilyIndices indices = {};
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, 0);
+
+    VkQueueFamilyProperties* queueFamilies = Allocate(queueFamilyCount * sizeof(VkQueueFamilyProperties));
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+
+    for (u32 i = 0; i < queueFamilyCount; ++i) 
+    {
+		VkQueueFamilyProperties queueFamily = queueFamilies[i];
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            indices.graphicsFamily = i;
+
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+        if (presentSupport)
+        {
+            indices.presentFamily = i;
+			indices.isValid = true;
+        }
+        if (indices.isValid)
+            break;
+        i++;
+    }
+
+    return indices;
 }
 
-static void* Allocate(size_t size)
+static bool VulkanIsDeviceCompatible(VkPhysicalDevice device, VkSurfaceKHR surface)
 {
-	return _malloca(size);
+	const QueueFamilyIndices result = findQueueFamilies(device, surface);
+    return result.isValid;
 }
 
 static VulkanContext VulkanInitContext(HWND windowHandle)
@@ -189,7 +224,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         Post(0);
 
     for (u32 i = 0; i < deviceCount; ++i)
-		if (VulkanIsDeviceCompatible(devices[i])) 
+		if (VulkanIsDeviceCompatible(devices[i], result.surface)) 
         {
             result.physicalDevice = devices[i];
             break;
