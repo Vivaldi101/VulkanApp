@@ -16,7 +16,8 @@ typedef uint32_t u32;
 #endif
 
 #define ArrayCount(a) sizeof(a) / sizeof(a[0])
-#define Halt abort();
+//#define Halt abort();
+#define Halt ;
 
 #define Pre(a) if(!(a)) Halt
 #define Post(a) if(!(a)) Halt
@@ -57,6 +58,9 @@ typedef struct VulkanContext
     VkImageView imageViews[VULKAN_IMAGE_COUNT];
     VkQueue queue;
     VkFormat format;
+    VkSemaphore semaphoreImageAvailable;
+    VkSemaphore semaphoreRenderFinished;
+    VkFence fenceFrame;
     u32    surfaceWidth;
     u32    surfaceHeight;
     u32    swapChainCount;
@@ -145,6 +149,20 @@ static bool VulkanIsDeviceCompatible(VkPhysicalDevice device, VkSurfaceKHR surfa
 {
 	const QueueFamilyIndices result = VulkanFindQueueFamilies(device, surface);
     return result.isValid && VulkanAreExtensionsSupported(device);
+}
+
+static void VulkanCreateSyncObjects(VulkanContext* context)
+{
+    Pre(context);
+	VkSemaphoreCreateInfo semaphoreInfo = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+	VkFenceCreateInfo fenceInfo = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = VK_FENCE_CREATE_SIGNALED_BIT };
+
+    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreImageAvailable)))
+		Post(0);
+    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreRenderFinished)))
+		Post(0);
+    if (!VK_VALID(vkCreateFence(context->logicalDevice, &fenceInfo, 0, &context->fenceFrame)))
+		Post(0);
 }
 
 static VulkanContext VulkanInitContext(HWND windowHandle)
@@ -350,7 +368,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = VK_FORMAT_B8G8R8A8_UNORM,
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
             .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -376,9 +394,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(queueFamilyCount > 0);
     vkGetPhysicalDeviceQueueFamilyProperties(result.physicalDevice, &queueFamilyCount, queueProperties);
 
-    VkQueue presentQueue = 0;
-    vkGetDeviceQueue(result.logicalDevice, 0, 0, &presentQueue);
-    result.queue = presentQueue;
+    vkGetDeviceQueue(result.logicalDevice, queueFamilies.presentFamily, 0, &result.queue);
 
 	// TODO: Use the above similar to these
 	// TODO: Wrap these
@@ -412,14 +428,14 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     VkRenderPass renderPass = 0;
 
     VkAttachmentDescription pass[1] = {0};
-    pass[0].format = VK_FORMAT_B8G8R8A8_UNORM;
+    pass[0].format = VK_FORMAT_B8G8R8A8_SRGB;
     pass[0].samples = VK_SAMPLE_COUNT_1_BIT;
     pass[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     pass[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     pass[0].stencilLoadOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     pass[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    pass[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    pass[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    pass[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    pass[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference ref = {0};
     ref.attachment = 0;
@@ -467,6 +483,8 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         }
     }
 
+    VulkanCreateSyncObjects(&result);
+
     // post conditions for the context
     Post(result.instance);
     Post(result.surface);
@@ -481,6 +499,10 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(result.format);
     Post(result.images);
 
+    Post(result.fenceFrame);
+    Post(result.semaphoreImageAvailable);
+    Post(result.semaphoreRenderFinished);
+
     return result;
 }
 
@@ -493,10 +515,19 @@ static void VulkanRecordCommandBuffer(VulkanContext* context, u32 imageIndex)
 static void VulkanRender(VulkanContext* context)
 {
     Pre(context);
-    u32 nextImageIndex = 0;
+    if (!VK_VALID(vkWaitForFences(context->logicalDevice, 1, &context->fenceFrame, VK_TRUE, UINT64_MAX)))
+		Post(0);
 
-    if (!VK_VALID(vkAcquireNextImageKHR(context->logicalDevice, context->swapChain, UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &nextImageIndex)))
+	if (!VK_VALID(vkResetFences(context->logicalDevice, 1, &context->fenceFrame)))
         Post(0);
+
+    u32 nextImageIndex = 0;
+    if (!VK_VALID(vkAcquireNextImageKHR(context->logicalDevice, context->swapChain, UINT64_MAX, context->semaphoreImageAvailable, VK_NULL_HANDLE, &nextImageIndex)))
+        Post(0);
+
+	if (!VK_VALID(vkResetCommandBuffer(context->drawCmdBuffer, 0)))
+		Post(0);
+
     {
         VkCommandBufferBeginInfo info =
         {
@@ -551,47 +582,31 @@ static void VulkanRender(VulkanContext* context)
     if (!VK_VALID(vkEndCommandBuffer(context->drawCmdBuffer)))
         Post(0);
 
-    // present:
-    // create a fence to inform us when the GPU
-    // has finished processing our commands
-	// setup the type of fence
-    VkFence renderFence;
     {
-        VkFenceCreateInfo info =
-        {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        };
-        if (!VK_VALID(vkCreateFence(context->logicalDevice, &info, 0, &renderFence)))
-            Post(0);
-    }
-    {
+        const VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo info =
         {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = VK_NULL_HANDLE,
-            .pWaitDstStageMask = 0,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &context->semaphoreImageAvailable,
+            .pWaitDstStageMask = waitStages,
             .commandBufferCount = 1,
             .pCommandBuffers = &context->drawCmdBuffer,
-            .signalSemaphoreCount = 0,
-            .pSignalSemaphores = VK_NULL_HANDLE,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &context->semaphoreRenderFinished,
         };
-        if (!VK_VALID(vkQueueSubmit(context->queue, 1, &info, renderFence)))
+
+        if (!VK_VALID(vkQueueSubmit(context->queue, 1, &info, context->fenceFrame)))
 			Post(0);
     }
-    // wait until the GPU has finished processing the commands
-    if (!VK_VALID(vkWaitForFences(context->logicalDevice, 1, &renderFence, VK_TRUE, UINT64_MAX)))
-		Post(0);
-    vkDestroyFence(context->logicalDevice, renderFence, 0);
-
     // present the image on the screen (flip the swap-chain image)
     {
         VkPresentInfoKHR info =
         {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .pNext = NULL,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = VK_NULL_HANDLE,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &context->semaphoreRenderFinished,
             .swapchainCount = 1,
             .pSwapchains = &context->swapChain,
             .pImageIndices = &nextImageIndex,
@@ -606,7 +621,7 @@ static void VulkanReset(VulkanContext* context)
 {
     Pre(context);
     Pre(context->instance);
-    // TODO: Clear all teh resources like vulkan image views framebuffers etc.
+    // TODO: Clear all teh resources like vulkan image views framebuffers, fences and semaphores etc.
     vkDestroyInstance(context->instance, 0);
 }
 
@@ -669,6 +684,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdsho
         VulkanRender(&context);
     }
 
+    vkDeviceWaitIdle(context.logicalDevice);
     VulkanReset(&context);
 
     return 0;
