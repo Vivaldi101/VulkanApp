@@ -244,8 +244,10 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(result.physicalDevice != VK_NULL_HANDLE);
 
     VkDeviceQueueCreateInfo queueInfo = {0};
+	const QueueFamilyIndices queueFamilies = VulkanFindQueueFamilies(result.physicalDevice, result.surface);
+    Post(queueFamilies.isValid);
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueInfo.queueFamilyIndex = 0;
+    queueInfo.queueFamilyIndex = queueFamilies.graphicsFamily;
     queueInfo.queueCount = 1;
     const float queuePriorities[] = {1.0f};
     queueInfo.pQueuePriorities = queuePriorities;
@@ -310,8 +312,8 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 			.presentMode = VK_PRESENT_MODE_FIFO_KHR,
 			.clipped = true,
 			.oldSwapchain = 0,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = 0,
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &queueFamilies.graphicsFamily,
         };
         if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &info, 0, &result.swapChain)))
             Post(0);
@@ -385,9 +387,9 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         VkCommandPoolCreateInfo info =
         {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
             .pNext = 0,
-            .queueFamilyIndex = 0,
-            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+            .queueFamilyIndex = queueFamilies.graphicsFamily,
         };
         if (!VK_VALID(vkCreateCommandPool(result.logicalDevice, &info, 0, &commandPool)))
             Post(0);
@@ -482,6 +484,12 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     return result;
 }
 
+// TODO: Use this
+static void VulkanRecordCommandBuffer(VulkanContext* context, u32 imageIndex)
+{
+    Pre(context);
+}
+
 static void VulkanRender(VulkanContext* context)
 {
     Pre(context);
@@ -493,8 +501,10 @@ static void VulkanRender(VulkanContext* context)
         VkCommandBufferBeginInfo info =
         {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            //.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .flags = 0, .pInheritanceInfo = 0, .pNext = 0,
         };
+        // start this cmd buffer
         if (!VK_VALID(vkBeginCommandBuffer(context->drawCmdBuffer, &info)))
             Post(0);
     }
@@ -503,14 +513,14 @@ static void VulkanRender(VulkanContext* context)
         // to gradually change the color on the screen
         static float aa = 0.0f;
         // slowly increment
-        aa += 0.001f;
+        aa += 0.011f;
         // when value reaches 1.0 reset to 0
         if (aa >= 1.0) aa = 0;
         // activate render pass:
         // clear color (r,g,b,a)
         VkClearValue clearValue[] = 
         { 
-            { 1.0f, aa, 1.0f, 1.0f },	// color
+            { 0.0f, aa, aa, 1.0f },	// color
 			{ 1.0, 0.0 }				// depth stencil
         }; 
 
@@ -520,6 +530,8 @@ static void VulkanRender(VulkanContext* context)
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = context->renderPass,
             .framebuffer = context->frameBuffers[nextImageIndex],
+            .renderArea.offset = {0,0},
+            .renderArea.extent = {context->surfaceWidth, context->surfaceHeight},
         };
         VkOffset2D a = { 0, 0 };
         VkExtent2D b = { context->surfaceWidth, context->surfaceHeight };
@@ -535,6 +547,7 @@ static void VulkanRender(VulkanContext* context)
         vkCmdEndRenderPass(context->drawCmdBuffer);
     }
 
+	// end this cmd buffer
     if (!VK_VALID(vkEndCommandBuffer(context->drawCmdBuffer)))
         Post(0);
 
@@ -593,7 +606,7 @@ static void VulkanReset(VulkanContext* context)
 {
     Pre(context);
     Pre(context->instance);
-    // TODO: Clear all teh resources like vulkan image views etc.
+    // TODO: Clear all teh resources like vulkan image views framebuffers etc.
     vkDestroyInstance(context->instance, 0);
 }
 
