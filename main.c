@@ -24,8 +24,7 @@ typedef uint32_t u32;
 #define Implies(a, b) (!(a) || (b))
 #define Iff(a, b) ((a) == (b))
 
-// TODO:
-// Use the push buffer style macros
+// TODO: Use the push buffer style macros from a single vulkan object pool
 static void* Allocate(size_t size)
 {
 	return _malloca(size);
@@ -98,7 +97,12 @@ typedef struct QueueFamilyIndices
     bool isValid;
 } QueueFamilyIndices;
 
-static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) 
+static bool VulkanAreExtensionsSupported(VkPhysicalDevice device)
+{
+    return true;
+}
+
+static QueueFamilyIndices VulkanFindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) 
 {
     QueueFamilyIndices indices = {};
 
@@ -132,8 +136,8 @@ static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKH
 
 static bool VulkanIsDeviceCompatible(VkPhysicalDevice device, VkSurfaceKHR surface)
 {
-	const QueueFamilyIndices result = findQueueFamilies(device, surface);
-    return result.isValid;
+	const QueueFamilyIndices result = VulkanFindQueueFamilies(device, surface);
+    return result.isValid && VulkanAreExtensionsSupported(device);
 }
 
 static VulkanContext VulkanInitContext(HWND windowHandle)
@@ -288,8 +292,8 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 			.surface = result.surface,
 			.minImageCount = 2,
-			.imageFormat = VK_FORMAT_B8G8R8A8_UNORM,
-			.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR,
+			.imageFormat = VK_FORMAT_B8G8R8A8_SRGB,
+			.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
 			.imageExtent = surfaceExtent,
 			.imageArrayLayers = 1,
 			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
