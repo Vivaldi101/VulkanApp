@@ -41,7 +41,8 @@ static LRESULT CALLBACK WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lpa
     return DefWindowProcW(wnd, msg, wparam, lparam);
 }
 
-#define FRAMEBUFFER_COUNT 3		// This is dumb - we need to query the swapchain count from vulkan
+// +1 more for min images used for double buffering to avoid implementation stalls
+#define VULKAN_IMAGE_COUNT 3		// TODO: This is dumb - we need to query the swapchain count from vulkan
 typedef struct VulkanContext
 {
     VkInstance instance;
@@ -51,8 +52,11 @@ typedef struct VulkanContext
     VkSwapchainKHR swapChain;
     VkCommandBuffer drawCmdBuffer;
     VkRenderPass renderPass;
-    VkFramebuffer frameBuffers[FRAMEBUFFER_COUNT];	// Normal double buffering
+    VkFramebuffer frameBuffers[VULKAN_IMAGE_COUNT];
+    VkImage images[VULKAN_IMAGE_COUNT];
+    VkImageView imageViews[VULKAN_IMAGE_COUNT];
     VkQueue queue;
+    VkFormat format;
     u32    surfaceWidth;
     u32    surfaceHeight;
     u32    swapChainCount;
@@ -294,7 +298,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         {
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 			.surface = result.surface,
-			.minImageCount = FRAMEBUFFER_COUNT,
+			.minImageCount = VULKAN_IMAGE_COUNT,
 			.imageFormat = VK_FORMAT_B8G8R8A8_SRGB,
 			.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
 			.imageExtent = surfaceExtent,
@@ -311,14 +315,18 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         };
         if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &info, 0, &result.swapChain)))
             Post(0);
+
+        result.format = info.imageFormat;
     }
 
     u32 swapChainCount = 0;
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
         Post(0);
 
-	if (swapChainCount != FRAMEBUFFER_COUNT)
+	if (swapChainCount != VULKAN_IMAGE_COUNT)
 		Post(0);
+
+    result.swapChainCount = swapChainCount;
 
     VkImage* swapChainImages = Allocate(swapChainCount*sizeof(VkImage));
     if (!swapChainImages)
@@ -326,6 +334,9 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
 	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
         Post(0);
+
+    for (u32 i = 0; i < swapChainCount; ++i)
+		result.images[i] = swapChainImages[i];
 
     VkImageView* imageViews = Allocate(swapChainCount*sizeof(VkImageView));
     if (!imageViews)
@@ -338,10 +349,10 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = VK_FORMAT_B8G8R8A8_UNORM,
-            .components.r = VK_COMPONENT_SWIZZLE_R,
-            .components.g = VK_COMPONENT_SWIZZLE_G,
-            .components.b = VK_COMPONENT_SWIZZLE_B,
-            .components.a = VK_COMPONENT_SWIZZLE_A,
+            .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.a = VK_COMPONENT_SWIZZLE_IDENTITY,
             .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .subresourceRange.baseMipLevel = 0,
             .subresourceRange.levelCount = 1,
@@ -352,6 +363,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 
         if (!VK_VALID(vkCreateImageView(result.logicalDevice, &info, 0, &imageViews[i])))
             Post(0);
+		result.imageViews[i] = imageViews[i];
     }
 
     u32 queueFamilyCount = 0;
@@ -459,11 +471,13 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
     Post(result.physicalDevice);
     Post(result.logicalDevice);
     Post(result.swapChain);
-    Post(result.swapChainCount > 0);
+    Post(result.swapChainCount == VULKAN_IMAGE_COUNT);
     Post(result.renderPass);
     Post(result.frameBuffers);
     Post(result.queue);
     Post(result.drawCmdBuffer);
+    Post(result.format);
+    Post(result.images);
 
     return result;
 }
@@ -579,6 +593,7 @@ static void VulkanReset(VulkanContext* context)
 {
     Pre(context);
     Pre(context->instance);
+    // TODO: Clear all teh resources like vulkan image views etc.
     vkDestroyInstance(context->instance, 0);
 }
 
