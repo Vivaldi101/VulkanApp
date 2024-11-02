@@ -41,7 +41,7 @@ static LRESULT CALLBACK WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lpa
     return DefWindowProcW(wnd, msg, wparam, lparam);
 }
 
-#define FRAMEBUFFER_COUNT 2		// This is dumb - we need to query the swapchain count from vulkan
+#define FRAMEBUFFER_COUNT 3		// This is dumb - we need to query the swapchain count from vulkan
 typedef struct VulkanContext
 {
     VkInstance instance;
@@ -130,6 +130,9 @@ static QueueFamilyIndices VulkanFindQueueFamilies(VkPhysicalDevice device, VkSur
             break;
         i++;
     }
+
+    // TODO: Currently just assume that graphics and present queues belong to same family
+    Post(indices.graphicsFamily == indices.presentFamily);
 
     return indices;
 }
@@ -291,7 +294,7 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
         {
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 			.surface = result.surface,
-			.minImageCount = 2,
+			.minImageCount = FRAMEBUFFER_COUNT,
 			.imageFormat = VK_FORMAT_B8G8R8A8_SRGB,
 			.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
 			.imageExtent = surfaceExtent,
@@ -303,6 +306,8 @@ static VulkanContext VulkanInitContext(HWND windowHandle)
 			.presentMode = VK_PRESENT_MODE_FIFO_KHR,
 			.clipped = true,
 			.oldSwapchain = 0,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = 0,
         };
         if (!VK_VALID(vkCreateSwapchainKHR(result.logicalDevice, &info, 0, &result.swapChain)))
             Post(0);
