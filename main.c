@@ -16,8 +16,8 @@ typedef uint32_t u32;
 #endif
 
 #define ArrayCount(a) sizeof(a) / sizeof(a[0])
-//#define Halt abort();
-#define Halt ;
+#define Halt abort();
+//#define Halt ;
 
 #define Pre(a) if(!(a)) Halt
 #define Post(a) if(!(a)) Halt
@@ -523,7 +523,7 @@ static void VulkanRender(VulkanContext* context)
 
     u32 nextImageIndex = 0;
     if (!VK_VALID(vkAcquireNextImageKHR(context->logicalDevice, context->swapChain, UINT64_MAX, context->semaphoreImageAvailable, VK_NULL_HANDLE, &nextImageIndex)))
-        Post(0);
+        ;
 
 	if (!VK_VALID(vkResetCommandBuffer(context->drawCmdBuffer, 0)))
 		Post(0);
@@ -613,7 +613,7 @@ static void VulkanRender(VulkanContext* context)
             .pResults = NULL,
         };
         if (!VK_VALID(vkQueuePresentKHR(context->queue, &info)))
-			Post(0);
+			;
     }
 }
 
