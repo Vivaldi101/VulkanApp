@@ -1,5 +1,4 @@
 #import	<Foundation/Foundation.h>
-#include <_abort.h>
 #import	<Cocoa/Cocoa.h>
 #import	<QuartzCore/QuartzCore.h>
 
