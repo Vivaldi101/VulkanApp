@@ -1,4 +1,5 @@
 #import	<Foundation/Foundation.h>
+#include <_abort.h>
 #import	<Cocoa/Cocoa.h>
 #import	<QuartzCore/QuartzCore.h>
 
@@ -116,11 +117,19 @@ void createWindow(u32 w, u32 h, const char* title, u32 flags)
 		abort();
 
 	platformWindow->windowDelegate = [[WindowDelegate alloc] initWithState:platformWindow];
+    if (!platformWindow->windowDelegate)
+        abort();
     platformWindow->view = [[ContentView alloc] initWithState:platformWindow];
+    if (!platformWindow->view)
+        abort();
+
+    [platformWindow->view setWantsLayer:YES];
 	platformWindow->window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0, w,h)
 											   styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable
 											   backing:NSBackingStoreBuffered
 											   defer:NO];
+    if (!platformWindow->window)
+        abort();
 
 	// Window properties
 	[platformWindow->window setDelegate:platformWindow->windowDelegate];
