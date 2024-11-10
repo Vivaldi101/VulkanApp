@@ -20,9 +20,14 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 # Link against Vulkan and MoltenVK
 target_link_libraries(vulkan_app ${Vulkan_LIBRARIES})
 
-# Link against MacOS Cocoa and frameworks
-target_link_libraries(vulkan_app "-framework Cocoa")
-target_link_libraries(vulkan_app "-framework CoreFoundation")
+# Metal and OSX stuff
+target_link_libraries(vulkan_app
+        "-framework Metal"
+        "-framework MetalKit"
+        "-framework AppKit"
+        "-framework Foundation"
+        "-framework QuartzCore"
+        )
 
 set(CMAKE_CXX_FLAGS "-g3 -fsanitize=address")
 set(CMAKE_C_FLAGS "-g3 -fsanitize=address")
