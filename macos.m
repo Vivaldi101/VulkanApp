@@ -77,7 +77,7 @@ typedef struct OSXPlatformWindow
 	WindowDelegate* windowDelegate;
 	ContentView* view;
 	NSWindow* window;
-	//CAMetalLayer* layer;
+	CAMetalLayer* layer;
 } OSXPlatformWindow;
 
 typedef struct OSXPlatformState
@@ -115,10 +115,10 @@ void createWindow(u32 w, u32 h, const char* title, u32 flags)
 	if (!platformWindow)
 		abort();
 
-	platformWindow->windowDelegate = [[WindowDelegate alloc] initWithState:platformWindow];
+	platformWindow->windowDelegate = [[WindowDelegate alloc] init];
     if (!platformWindow->windowDelegate)
         abort();
-    platformWindow->view = [[ContentView alloc] initWithState:platformWindow];
+    platformWindow->view = [[ContentView alloc] init];
     if (!platformWindow->view)
         abort();
 
@@ -134,7 +134,16 @@ void createWindow(u32 w, u32 h, const char* title, u32 flags)
 	[platformWindow->window setDelegate:platformWindow->windowDelegate];
 	[platformWindow->window setContentView:platformWindow->view];
 	[platformWindow->window setTitle:@(title)];
+	[platformWindow->window makeFirstResponder:platformWindow->view];
 	[platformWindow->window makeKeyAndOrderFront:nil];
+	[platformWindow->window center];
+	[platformWindow->window orderFrontRegardless];
+
+    platformWindow->layer = [CAMetalLayer layer];
+    if (!platformWindow->layer)
+        abort();
+
+	[platformWindow->view setLayer:platformWindow->layer];
 
     platform.window = platformWindow;
 }
