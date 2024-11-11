@@ -65,17 +65,19 @@ static void DebugMessage(const char* format, ...)
     OutputDebugStringA(temp);
 }
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(
+#endif
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void* pUserData) {
 
-    DebugMessage("Validation layer: %s\n", pCallbackData->pMessage);
+    //DebugMessage("Validation layer: %s\n", pCallbackData->pMessage);
+    printf("Validation layer: %s\n", pCallbackData->pMessage);
 
     return VK_FALSE;
 }
-#endif
 
 typedef struct QueueFamilyIndices 
 {
@@ -171,7 +173,7 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     appInfo.applicationVersion = VK_MAKE_VERSION(1,0,0);
     appInfo.engineVersion = VK_MAKE_VERSION(1,0,0);
     appInfo.pEngineName = "No Engine";
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.apiVersion = VK_API_VERSION_1_3;
 
     VkInstanceCreateInfo instanceInfo = {0};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -185,7 +187,7 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     if (!VK_VALID(vkCreateInstance(&instanceInfo, 0, &result.instance)))
         Post(0);
 
-#if 0
+#if 1
     VkDebugUtilsMessengerEXT debugMessenger;
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
     debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -194,7 +196,7 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    //debugCreateInfo.pfnUserCallback = VulkanDebugCallback;
+    debugCreateInfo.pfnUserCallback = vulkanDebugCallback;
 
     if (!VK_VALID(VulkanCreateDebugUtilsMessengerEXT(result.instance, &debugCreateInfo, 0, &debugMessenger)))
         Post(0);

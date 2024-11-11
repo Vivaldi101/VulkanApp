@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 
 #define ArrayCount(a) sizeof(a) / sizeof(a[0])
