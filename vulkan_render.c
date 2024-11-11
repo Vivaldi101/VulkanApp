@@ -1,24 +1,12 @@
-﻿#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define VK_USE_PLATFORM_WIN32_KHR
-#include <Windows.h>
-#endif
-
-#include <stdint.h>
-//#include <assert.h>
+﻿#include <vulkan/vulkan.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <vulkan/vulkan.h>
 
-typedef uint32_t u32;
+#include "platform.h"
 
 #ifndef VK_VALID
 #define VK_VALID(v) ((v) == VK_SUCCESS)
 #endif
 
-#define ArrayCount(a) sizeof(a) / sizeof(a[0])
-#define Halt abort();
 //#define Halt ;
 
 #define Pre(a) if(!(a)) Halt
@@ -33,18 +21,6 @@ static void* Allocate(size_t size)
 	return malloc(size);
 }
 
-#if 0
-static LRESULT CALLBACK WindowProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam)
-{
-    switch (msg)
-    {
-        case WM_DESTROY:
-            PostQuitMessage(0);
-        return 0;
-    }
-    return DefWindowProcW(wnd, msg, wparam, lparam);
-}
-#endif
 // +1 more for min images used for double buffering to avoid implementation stalls
 #define VULKAN_IMAGE_COUNT 3		// TODO: This is dumb - we need to query the swapchain count from vulkan
 typedef struct VulkanContext
@@ -169,7 +145,7 @@ static void VulkanCreateSyncObjects(VulkanContext* context)
 		Post(0);
 }
 
-static VulkanContext VulkanInitContext(void* windowHandle)
+static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
 {
     VulkanContext result = {};
     u32 extensionCount = 0;
@@ -232,19 +208,19 @@ static VulkanContext VulkanInitContext(void* windowHandle)
 
     if (!isWin32Surface)
         Post(0);
+
+    PFN_vkCreateWin32SurfaceKHR vkWin32SurfaceFunction = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(result.instance, "vkCreateWin32SurfaceKHR");
+
+    if (!vkWin32SurfaceFunction)
+        Post(0);
+
+    VkWin32SurfaceCreateInfoKHR win32SurfaceInfo = {0};
+    win32SurfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    win32SurfaceInfo.hinstance = GetModuleHandleA(0);
+    win32SurfaceInfo.hwnd = windowHandle;
+
+    vkWin32SurfaceFunction(result.instance, &win32SurfaceInfo, 0, &result.surface);
 #endif
-
-    //PFN_vkCreateWin32SurfaceKHR vkWin32SurfaceFunction = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(result.instance, "vkCreateWin32SurfaceKHR");
-
-    //if (!vkWin32SurfaceFunction)
-        //Post(0);
-
-    //VkWin32SurfaceCreateInfoKHR win32SurfaceInfo = {0};
-    //win32SurfaceInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    //win32SurfaceInfo.hinstance = GetModuleHandleA(0);
-    //win32SurfaceInfo.hwnd = windowHandle;
-
-    //vkWin32SurfaceFunction(result.instance, &win32SurfaceInfo, 0, &result.surface);
 
     u32 deviceCount = 0;
     if (!VK_VALID(vkEnumeratePhysicalDevices(result.instance, &deviceCount, 0)))
@@ -630,69 +606,24 @@ static void VulkanReset(VulkanContext* context)
     // TODO: Clear all teh resources like vulkan image views framebuffers, fences and semaphores etc.
     vkDestroyInstance(context->instance, 0);
 }
-#if 0
-int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int cmdshow)
+
+void vulkanInitialize(OSXPlatformWindow* window)
 {
-    // register window class to have custom WindowProc callback
-    WNDCLASSEXW wc = {0};
-    wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = instance;
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.lpszClassName = L"opengl_window_class";
-    ATOM atom = RegisterClassExW(&wc);
-    assert(atom && "Failed to register window class");
+    return;
+    const VulkanContext context = OSXVulkanInitialize(window);
 
-    // window properties - width, height and style
-    int width = CW_USEDEFAULT;
-    int height = CW_USEDEFAULT;
-    DWORD exstyle = WS_EX_APPWINDOW;
-    DWORD style = WS_OVERLAPPEDWINDOW;
-
-    // uncomment in case you want fixed size window
-    //style &= ~WS_THICKFRAME & ~WS_MAXIMIZEBOX;
-    RECT rect = { 0, 0, 800, 600 };
-    AdjustWindowRectEx(&rect, style, FALSE, exstyle);
-    width = rect.right - rect.left;
-    height = rect.bottom - rect.top;
-
-    // create window
-    HWND window = CreateWindowExW(
-        exstyle, wc.lpszClassName, L"Vulkan Window", style,
-        0, 0, width, height,
-        NULL, NULL, wc.hInstance, NULL);
-    assert(window && "Failed to create window");
-
-    RECT clientRectangle = {0};
-    GetClientRect(window, &clientRectangle);
-
-    width = clientRectangle.right - clientRectangle.left;
-    height = clientRectangle.bottom - clientRectangle.top;
-
-    VulkanContext context = VulkanInitContext(window);
-
-    // show the window
-    ShowWindow(window, SW_SHOWDEFAULT);
-
+#if 0
     // main render loop
     for (;;)
     {
-        // process all incoming Windows messages
-        MSG msg;
-        if (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
-        {
-            if (msg.message == WM_QUIT)
-                break;
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        VulkanRender(&context);
+        //VulkanRender(&context);
     }
-
-    vkDeviceWaitIdle(context.logicalDevice);
-    VulkanReset(&context);
-
-    return 0;
-}
 #endif
+
+    //vkDeviceWaitIdle(context.logicalDevice);
+}
+
+void vulkanDeinitialize(VulkanContext* context)
+{
+    VulkanReset(context);
+}

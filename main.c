@@ -3,9 +3,10 @@
 
 int main()
 {
-	initialize();
-    createWindow(800, 600, "Hello Apple", 0);
-	run();
+	platformInitialize();
+    OSXPlatformWindow* window = platformCreateWindow(800, 600, "Hello Apple", 0);
+    vulkanInitialize(window);
+	platformRun();
 
 	return 0;
 }

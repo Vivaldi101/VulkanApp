@@ -7,8 +7,6 @@ find_package(Vulkan REQUIRED)
 set(sources main.c vulkan_render.c)
 if (APPLE)
     list(APPEND sources macos.m)
-elseif()
-    list(APPEND sources ios.m)  # TODO
 endif()
 
 # Add your executable

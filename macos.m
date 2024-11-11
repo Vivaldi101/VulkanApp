@@ -109,7 +109,7 @@ static OSXPlatformState platform;
 }
 @end
 
-void createWindow(u32 w, u32 h, const char* title, u32 flags)
+OSXPlatformWindow* platformCreateWindow(u32 w, u32 h, const char* title, u32 flags)
 {
 	OSXPlatformWindow* platformWindow = malloc(sizeof(OSXPlatformWindow));
 	if (!platformWindow)
@@ -146,9 +146,10 @@ void createWindow(u32 w, u32 h, const char* title, u32 flags)
 	[platformWindow->view setLayer:platformWindow->layer];
 
     platform.window = platformWindow;
+    return platform.window;
 }
 
-void initialize()
+void platformInitialize()
 {
 	[NSApplication sharedApplication];
 	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -164,7 +165,7 @@ void initialize()
 	[NSApp finishLaunching];
 }
 
-void run()
+void platformRun()
 {
     while (!platform.doClose)
         OSXUpdate();
