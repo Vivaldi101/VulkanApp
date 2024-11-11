@@ -5,8 +5,8 @@ int main()
 {
 	platformInitialize();
     OSXPlatformWindow* window = platformCreateWindow(800, 600, "Hello Apple", 0);
-    vulkanInitialize(window);
-	platformRun();
+    VulkanContext context = vulkanInitialize(window);
+	platformRun(&context);
 
 	return 0;
 }
