@@ -5,9 +5,8 @@
 
 #ifndef VK_VALID
 #define VK_VALID(v) ((v) == VK_SUCCESS)
+#define VK_VALID_HANDLE(v) ((v) != VK_NULL_HANDLE)
 #endif
-
-//#define Halt ;
 
 #define Pre(a) if(!(a)) Halt
 #define Post(a) if(!(a)) Halt
@@ -147,7 +146,7 @@ static void VulkanCreateSyncObjects(VulkanContext* context)
 
 static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
 {
-    VulkanContext result = {};
+    VulkanContext result = {0};
     u32 extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
         Post(0);
@@ -169,10 +168,10 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     VkApplicationInfo appInfo = {0};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "VulkanApp";
-    appInfo.applicationVersion = VK_API_VERSION_1_0;
-    appInfo.engineVersion = VK_API_VERSION_1_0;
+    appInfo.applicationVersion = VK_MAKE_VERSION(1,0,0);
+    appInfo.engineVersion = VK_MAKE_VERSION(1,0,0);
     appInfo.pEngineName = "No Engine";
-    appInfo.apiVersion = VK_API_VERSION_1_0;
+    appInfo.apiVersion = VK_API_VERSION_1_2;
 
     VkInstanceCreateInfo instanceInfo = {0};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -181,10 +180,12 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     instanceInfo.ppEnabledLayerNames = validationLayers;
     instanceInfo.enabledExtensionCount = extensionCount;
     instanceInfo.ppEnabledExtensionNames = extensionNames;
+    instanceInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 
     if (!VK_VALID(vkCreateInstance(&instanceInfo, 0, &result.instance)))
         Post(0);
 
+#if 0
     VkDebugUtilsMessengerEXT debugMessenger;
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {0};
     debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -197,6 +198,7 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
 
     if (!VK_VALID(VulkanCreateDebugUtilsMessengerEXT(result.instance, &debugCreateInfo, 0, &debugMessenger)))
         Post(0);
+#endif
 
 #if 0
     bool isWin32Surface = false;
@@ -234,8 +236,9 @@ static VulkanContext OSXVulkanInitialize(void* /*windowHandle*/)
     if (!VK_VALID(vkEnumeratePhysicalDevices(result.instance, &deviceCount, devices)))
         Post(0);
 
+    Post(VK_VALID_HANDLE(result.surface));
     for (u32 i = 0; i < deviceCount; ++i)
-		if (VulkanIsDeviceCompatible(devices[i], result.surface)) 
+		if (VulkanIsDeviceCompatible(devices[i], result.surface))
         {
             result.physicalDevice = devices[i];
             break;
@@ -609,7 +612,6 @@ static void VulkanReset(VulkanContext* context)
 
 void vulkanInitialize(OSXPlatformWindow* window)
 {
-    return;
     const VulkanContext context = OSXVulkanInitialize(window);
 
 #if 0

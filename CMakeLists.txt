@@ -27,5 +27,5 @@ target_link_libraries(vulkan_app
         "-framework QuartzCore"
         )
 
-set(CMAKE_CXX_FLAGS "-g3 -fsanitize=address")
-set(CMAKE_C_FLAGS "-g3 -fsanitize=address")
+set(CMAKE_CXX_FLAGS "-std=c2x -g3 -fsanitize=address")
+set(CMAKE_C_FLAGS "-std=c2x -g3 -fsanitize=address")
