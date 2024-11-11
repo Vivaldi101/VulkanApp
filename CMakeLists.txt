@@ -5,6 +5,8 @@ project(vulkan_app)
 find_package(Vulkan REQUIRED)
 
 set(sources main.c vulkan_render.c)
+
+# Differentiate between iOS and Mac
 if (APPLE)
     list(APPEND sources macos.m)
 endif()

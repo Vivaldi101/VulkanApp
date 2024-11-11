@@ -163,6 +163,8 @@ void platformInitialize()
 	[NSApp setDelegate:platform.app];
 	[NSApp run];
 	[NSApp finishLaunching];
+
+	[NSApp activateIgnoringOtherApps:YES];
 }
 
 void platformRun()
