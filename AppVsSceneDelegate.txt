@@ -1,0 +1,2 @@
+The AppDelegate will be responsible for the application lifecycle and setup.
+The SceneDelegate will be responsible for what is shown on the screen (Windows or Scenes) handle and manage the way your app is shown.
