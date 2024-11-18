@@ -9,6 +9,7 @@ enable_language(OBJCXX)
 set(APP_NAME ${PROJECT_NAME})
 # Set sources
 set(SOURCE_FILES main.mm AAPLViewController.mm AAPLViewController.h AAPLRenderer.mm AAPLRenderer.h AAPLAppDelegate.mm AAPLAppDelegate.h)
+
 # Set bundle ids and targets
 set(APP_BUNDLE_IDENTIFIER "com.test.vulkanapp")
 set(DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
@@ -16,7 +17,7 @@ set(MY_CODE_SIGN_IDENTITY "Apple Development")
 set(DEVELOPMENT_TEAM_ID "XXXXXXXXXX") # Set your team id here or in Xcode
 set(DEVICE_FAMILY "1")  # 1 for iOS
 
-set(FRAMEWORK_NAME "Framework")
+set(FRAMEWORK_NAME "CustomFramework")
 set(PRODUCT_NAME ${APP_NAME})
 set(EXECUTABLE_NAME ${APP_NAME})
 
@@ -65,12 +66,14 @@ if(Vulkan_Layer_VALIDATION)
     #endif()
 endif()
 
+add_subdirectory(${FRAMEWORK_NAME})
+list(APPEND FRAMEWORKS_TO_EMBED "${FRAMEWORK_NAME}")
+
 # Create the app target
 # add these later RESOURCE "${RESOURCES}"
 set_target_properties("${APP_NAME}"
                       PROPERTIES
                       XCODE_EMBED_FRAMEWORKS  "${FRAMEWORKS_TO_EMBED}"
-                      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${MACOSX_BUNDLE_GUI_IDENTIFIER}"
                       XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
                       XCODE_ATTRIBUTE_GCC_PRECOMPILE_PREFIX_HEADER "YES"
                       XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "${DEPLOYMENT_TARGET}"
@@ -84,7 +87,7 @@ set_target_properties("${APP_NAME}"
                       XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
                       XCODE_ATTRIBUTE_ENABLE_TESTABILITY YES
                       XCODE_ATTRIBUTE_GCC_SYMBOLS_PRIVATE_EXTERN YES
-                      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${APP_BUNDLE_IDENTIFIER})
+                      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${APP_BUNDLE_IDENTIFIER}")
 
 # Set the app's linker search path to the default location on iOS
 set_target_properties(
@@ -112,6 +115,7 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 # Link system frameworks
 target_link_libraries(${APP_NAME} PRIVATE
     "${Vulkan_LIBRARIES}"
+    "-framework Engine"
     "-framework UIKit"
     "-framework Foundation"
     "-framework CoreGraphics"

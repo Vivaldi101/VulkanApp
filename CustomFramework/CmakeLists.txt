@@ -1,0 +1,21 @@
+# Version
+cmake_minimum_required(VERSION 3.10)
+
+# Create the shared library (DLL)
+add_library(Engine SHARED engine.m engine.h)
+
+set(ENGINE_BUNDLE_IDENTIFIER "com.test.vulkanengine")
+set_target_properties(Engine PROPERTIES
+    FRAMEWORK TRUE
+    FRAMEWORK_VERSION A
+    MACOSX_FRAMEWORK_IDENTIFIER "${ENGINE_BUNDLE_IDENTIFIER}"
+    MACOSX_FRAMEWORK_INFO_PLIST Info.plist
+    # "current version" in semantic format in Mach-O binary file
+    VERSION 16.4.0
+    # "compatibility version" in semantic format in Mach-O binary file
+    SOVERSION 1.0.0
+    PUBLIC_HEADER engine.h
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${MY_CODE_SIGN_IDENTITY}"
+    XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${ENGINE_BUNDLE_IDENTIFIER}"
+)
