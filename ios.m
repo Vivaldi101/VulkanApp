@@ -1,11 +1,15 @@
-#import	<Cocoa/Cocoa.h>
 #import	<Foundation/Foundation.h>
-#import	<QuartzCore/QuartzCore.h>
-
-#import "platform.h"
+#import <CoreGraphics/CoreGraphics.h>
+#import	<UIKit/UIKit.h>
 
 #define VK_USE_PLATFORM_METAL_EXT
-#include <vulkan/vulkan.h>
+#import <vulkan/vulkan.h>
+
+#import "platform.h"
+#import "AAPLAppDelegate.h"
+#import "AAPLViewController.h"
+
+#if 0
 
 @interface ApplicationDelegate : NSObject<NSApplicationDelegate>
 @end
@@ -83,14 +87,6 @@ typedef struct OSXPlatformState
 	BOOL doClose;
 } OSXPlatformState;
 
-typedef struct OSXPlatformWindow
-{
-	WindowDelegate* windowDelegate;
-	ContentView* view;
-	NSWindow* window;
-	CAMetalLayer* layer;
-} OSXPlatformWindow;
-
 static OSXPlatformState platform;
 
 @implementation WindowDelegate
@@ -111,46 +107,6 @@ static OSXPlatformState platform;
 	return YES;
 }
 @end
-
-OSXPlatformWindow* platformCreateWindow(u32 w, u32 h, const char* title, u32 flags)
-{
-	OSXPlatformWindow* platformWindow = malloc(sizeof(OSXPlatformWindow));
-	if (!platformWindow)
-		abort();
-
-	platformWindow->windowDelegate = [[WindowDelegate alloc] init];
-    if (!platformWindow->windowDelegate)
-        abort();
-    platformWindow->view = [[ContentView alloc] init];
-    if (!platformWindow->view)
-        abort();
-
-    [platformWindow->view setWantsLayer:YES];
-	platformWindow->window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0, w,h)
-											   styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable
-											   backing:NSBackingStoreBuffered
-											   defer:NO];
-    if (!platformWindow->window)
-        abort();
-
-	// Window properties
-	[platformWindow->window setDelegate:platformWindow->windowDelegate];
-	[platformWindow->window setContentView:platformWindow->view];
-	[platformWindow->window setTitle:@(title)];
-	[platformWindow->window makeFirstResponder:platformWindow->view];
-	[platformWindow->window makeKeyAndOrderFront:nil];
-	[platformWindow->window center];
-	[platformWindow->window orderFrontRegardless];
-
-    platformWindow->layer = [CAMetalLayer layer];
-    if (!platformWindow->layer)
-        abort();
-
-	[platformWindow->view setLayer:platformWindow->layer];
-
-    platform.window = platformWindow;
-    return platform.window;
-}
 
 void platformInitialize()
 {
@@ -179,6 +135,141 @@ void platformRun(VulkanContext* context)
     }
 }
 
+
+#endif
+
+typedef struct OSXPlatformWindow
+{
+    UIWindow* window;
+    CAMetalLayer* layer;
+} OSXPlatformWindow;
+
+OSXPlatformWindow* platformCreateWindow(u32 w, u32 h, const char* title, u32 flags)
+{
+    OSXPlatformWindow* platformWindow = calloc(1, sizeof(OSXPlatformWindow));
+    if (!platformWindow)
+        abort();
+
+    CGRect frame = {{0,0}, {w,h}};
+    if (w == 0 || h == 0)
+        frame = [UIScreen mainScreen].bounds;
+
+    // Create the main iOS window
+    platformWindow->window = [[UIWindow alloc] initWithFrame:frame];
+    if (!platformWindow->window)
+        abort();
+
+    // Create the main backing layer for window
+    CAMetalLayer *metalLayer = (CAMetalLayer *)platformWindow->window.layer;
+    if (!metalLayer)
+        abort();
+
+    platformWindow->layer = metalLayer;
+
+#if 0
+    //For Metal
+    platformWindow->windowDelegate = [[WindowDelegate alloc] init];
+    if (!platformWindow->windowDelegate)
+        abort();
+    platformWindow->view = [[ContentView alloc] init];
+    if (!platformWindow->view)
+        abort();
+
+    [platformWindow->view setWantsLayer:YES];
+    platformWindow->window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0, w,h)
+                                               styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable
+                                               backing:NSBackingStoreBuffered
+                                               defer:NO];
+    if (!platformWindow->window)
+        abort();
+
+    // Window properties
+    [platformWindow->window setDelegate:platformWindow->windowDelegate];
+    [platformWindow->window setContentView:platformWindow->view];
+    [platformWindow->window setTitle:@(title)];
+    [platformWindow->window makeFirstResponder:platformWindow->view];
+    [platformWindow->window makeKeyAndOrderFront:nil];
+    [platformWindow->window center];
+    [platformWindow->window orderFrontRegardless];
+
+    platformWindow->layer = [CAMetalLayer layer];
+    if (!platformWindow->layer)
+        abort();
+
+    //[platformWindow->view setLayer:platformWindow->layer];
+
+    //platform.window = platformWindow;
+#endif
+    return platformWindow;
+}
+
+static void VulkanCreateSyncObjects(VulkanContext* context)
+{
+    Pre(context);
+    VkSemaphoreCreateInfo semaphoreInfo = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    VkFenceCreateInfo fenceInfo = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = VK_FENCE_CREATE_SIGNALED_BIT };
+
+    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreImageAvailable)))
+        Post(0);
+    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreRenderFinished)))
+        Post(0);
+    if (!VK_VALID(vkCreateFence(context->logicalDevice, &fenceInfo, 0, &context->fenceFrame)))
+        Post(0);
+}
+
+typedef struct QueueFamilyIndices
+{
+    u32 graphicsFamily;
+    u32 presentFamily;
+    bool isValid;
+} QueueFamilyIndices;
+
+static bool VulkanAreExtensionsSupported(VkPhysicalDevice device)
+{
+    return true;
+}
+
+static QueueFamilyIndices VulkanFindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface)
+{
+    QueueFamilyIndices indices = {};
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, 0);
+
+    VkQueueFamilyProperties* queueFamilies = allocate(queueFamilyCount * sizeof(VkQueueFamilyProperties));
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+
+    for (u32 i = 0; i < queueFamilyCount; ++i)
+    {
+        VkQueueFamilyProperties queueFamily = queueFamilies[i];
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            indices.graphicsFamily = i;
+
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+        if (presentSupport)
+        {
+            indices.presentFamily = i;
+            indices.isValid = true;
+        }
+        if (indices.isValid)
+            break;
+        i++;
+    }
+
+    // TODO: Currently just assume that graphics and present queues belong to same family
+    Post(indices.graphicsFamily == indices.presentFamily);
+
+    return indices;
+}
+
+static bool VulkanIsDeviceCompatible(VkPhysicalDevice device, VkSurfaceKHR surface)
+{
+    const QueueFamilyIndices result = VulkanFindQueueFamilies(device, surface);
+    return result.isValid && VulkanAreExtensionsSupported(device);
+}
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -202,75 +293,26 @@ static VkResult vulkanCreateDebugUtilsMessengerEXT(VkInstance instance,
     return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
 }
 
-typedef struct QueueFamilyIndices
+static void checkExtensions()
 {
-    u32 graphicsFamily;
-    u32 presentFamily;
-    bool isValid;
-} QueueFamilyIndices;
+    uint32_t extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
 
-static bool VulkanAreExtensionsSupported(VkPhysicalDevice device)
-{
-    return true;
-}
+    VkExtensionProperties *extensions = malloc(extensionCount * sizeof(VkExtensionProperties));
+    vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions);
 
-static QueueFamilyIndices VulkanFindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) 
-{
-    QueueFamilyIndices indices = {};
-
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, 0);
-
-    VkQueueFamilyProperties* queueFamilies = allocate(queueFamilyCount * sizeof(VkQueueFamilyProperties));
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
-
-    for (u32 i = 0; i < queueFamilyCount; ++i) 
-    {
-		VkQueueFamilyProperties queueFamily = queueFamilies[i];
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            indices.graphicsFamily = i;
-
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-
-        if (presentSupport)
-        {
-            indices.presentFamily = i;
-			indices.isValid = true;
-        }
-        if (indices.isValid)
-            break;
-        i++;
+    printf("Available Vulkan instance extensions:\n");
+    for (uint32_t i = 0; i < extensionCount; ++i) {
+        printf("\t%s\n", extensions[i].extensionName);
     }
 
-    // TODO: Currently just assume that graphics and present queues belong to same family
-    Post(indices.graphicsFamily == indices.presentFamily);
-
-    return indices;
+    free(extensions);
 }
 
-static bool VulkanIsDeviceCompatible(VkPhysicalDevice device, VkSurfaceKHR surface)
+VulkanContext* OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
 {
-	const QueueFamilyIndices result = VulkanFindQueueFamilies(device, surface);
-    return result.isValid && VulkanAreExtensionsSupported(device);
-}
-
-static void VulkanCreateSyncObjects(VulkanContext* context)
-{
-    Pre(context);
-	VkSemaphoreCreateInfo semaphoreInfo = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-	VkFenceCreateInfo fenceInfo = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = VK_FENCE_CREATE_SIGNALED_BIT };
-
-    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreImageAvailable)))
-		Post(0);
-    if (!VK_VALID(vkCreateSemaphore(context->logicalDevice, &semaphoreInfo, 0, &context->semaphoreRenderFinished)))
-		Post(0);
-    if (!VK_VALID(vkCreateFence(context->logicalDevice, &fenceInfo, 0, &context->fenceFrame)))
-		Post(0);
-}
-
-VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
-{
+    checkExtensions();
+    
     VulkanContext result = {0};
     u32 extensionCount = 0;
     if (!VK_VALID(vkEnumerateInstanceExtensionProperties(0, &extensionCount, 0)))
@@ -288,7 +330,7 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     for (size_t i = 0; i < extensionCount; ++i)
         extensionNames[i] = extensions[i].extensionName;
 
-    const char* validationLayers[] = {"VK_LAYER_KHRONOS_validation"};
+    //const char* validationLayers[] = {"VK_LAYER_KHRONOS_validation"};
 
     VkApplicationInfo appInfo = {0};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -296,18 +338,26 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     appInfo.applicationVersion = VK_MAKE_VERSION(1,0,0);
     appInfo.engineVersion = VK_MAKE_VERSION(1,0,0);
     appInfo.pEngineName = "No Engine";
-    appInfo.apiVersion = VK_API_VERSION_1_3;
+    appInfo.apiVersion = VK_API_VERSION_1_2;
 
     VkInstanceCreateInfo instanceInfo = {0};
+    const char* instanceExtensions[] = {
+        "VK_EXT_debug_report"
+        "VK_EXT_debug_utils"
+        "VK_KHR_portability_enumeration"
+        "VK_LUNARG_direct_driver_loading"
+    };
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
-    instanceInfo.enabledLayerCount = ArrayCount(validationLayers);
-    instanceInfo.ppEnabledLayerNames = validationLayers;
-    instanceInfo.enabledExtensionCount = extensionCount;
-    instanceInfo.ppEnabledExtensionNames = extensionNames;
-    instanceInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    instanceInfo.enabledLayerCount = 0;
+    instanceInfo.ppEnabledLayerNames = 0;
+    instanceInfo.enabledExtensionCount = ArrayCount(instanceExtensions);
+    instanceInfo.ppEnabledExtensionNames = instanceExtensions;
+    instanceInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    
+    VkResult createInstanceResult = vkCreateInstance(&instanceInfo, 0, &result.instance);
 
-    if (!VK_VALID(vkCreateInstance(&instanceInfo, 0, &result.instance)))
+    if (!VK_VALID(createInstanceResult))
         Post(0);
 
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -346,7 +396,7 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
 
     Post(VK_VALID_HANDLE(result.surface));
     for (u32 i = 0; i < deviceCount; ++i)
-		if (VulkanIsDeviceCompatible(devices[i], result.surface))
+        if (VulkanIsDeviceCompatible(devices[i], result.surface))
         {
             result.physicalDevice = devices[i];
             break;
@@ -355,7 +405,7 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     Post(result.physicalDevice != VK_NULL_HANDLE);
 
     VkDeviceQueueCreateInfo queueInfo = {0};
-	const QueueFamilyIndices queueFamilies = VulkanFindQueueFamilies(result.physicalDevice, result.surface);
+    const QueueFamilyIndices queueFamilies = VulkanFindQueueFamilies(result.physicalDevice, result.surface);
     Post(queueFamilies.isValid);
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queueInfo.queueFamilyIndex = queueFamilies.graphicsFamily;
@@ -382,13 +432,13 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     {
         VkDeviceCreateInfo info =
         {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pQueueCreateInfos = &queueInfo,
-			.queueCreateInfoCount = 1,
-			.enabledExtensionCount = extensionCount,
-			.ppEnabledExtensionNames = extensionNames,
-			.enabledLayerCount = 0,
-			.ppEnabledLayerNames = 0,
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pQueueCreateInfos = &queueInfo,
+            .queueCreateInfoCount = 1,
+            .enabledExtensionCount = extensionCount,
+            .ppEnabledExtensionNames = extensionNames,
+            .enabledLayerCount = 0,
+            .ppEnabledLayerNames = 0,
         };
 
         VkPhysicalDeviceFeatures physicalFeatures = { 0 };
@@ -409,20 +459,20 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     {
         VkSwapchainCreateInfoKHR info =
         {
-			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = result.surface,
-			.minImageCount = VULKAN_IMAGE_COUNT,
-			.imageFormat = VK_FORMAT_B8G8R8A8_SRGB,
-			.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-			.imageExtent = surfaceExtent,
-			.imageArrayLayers = 1,
-			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-			.presentMode = VK_PRESENT_MODE_FIFO_KHR,
-			.clipped = true,
-			.oldSwapchain = 0,
+            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface = result.surface,
+            .minImageCount = VULKAN_IMAGE_COUNT,
+            .imageFormat = VK_FORMAT_B8G8R8A8_SRGB,
+            .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            .imageExtent = surfaceExtent,
+            .imageArrayLayers = 1,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+            .clipped = true,
+            .oldSwapchain = 0,
             .queueFamilyIndexCount = 1,
             .pQueueFamilyIndices = &queueFamilies.graphicsFamily,
         };
@@ -433,11 +483,11 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     }
 
     u32 swapChainCount = 0;
-	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
+    if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, 0)))
         Post(0);
 
-	if (swapChainCount != VULKAN_IMAGE_COUNT)
-		Post(0);
+    if (swapChainCount != VULKAN_IMAGE_COUNT)
+        Post(0);
 
     result.swapChainCount = swapChainCount;
 
@@ -445,21 +495,21 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     if (!swapChainImages)
         Post(0);
 
-	if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
+    if (!VK_VALID(vkGetSwapchainImagesKHR(result.logicalDevice, result.swapChain, &swapChainCount, swapChainImages)))
         Post(0);
 
     for (u32 i = 0; i < swapChainCount; ++i)
-		result.images[i] = swapChainImages[i];
+        result.images[i] = swapChainImages[i];
 
     VkImageView* imageViews = allocate(swapChainCount*sizeof(VkImageView));
     if (!imageViews)
         Post(0);
 
-	result.swapChainCount = swapChainCount;
+    result.swapChainCount = swapChainCount;
     for (u32 i = 0; i < swapChainCount; ++i) {
-        VkImageViewCreateInfo info = 
+        VkImageViewCreateInfo info =
         {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = VK_FORMAT_B8G8R8A8_SRGB,
             .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -476,7 +526,7 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
 
         if (!VK_VALID(vkCreateImageView(result.logicalDevice, &info, 0, &imageViews[i])))
             Post(0);
-		result.imageViews[i] = imageViews[i];
+        result.imageViews[i] = imageViews[i];
     }
 
     u32 queueFamilyCount = 0;
@@ -489,8 +539,8 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
 
     vkGetDeviceQueue(result.logicalDevice, queueFamilies.presentFamily, 0, &result.queue);
 
-	// TODO: Use the above similar to these
-	// TODO: Wrap these
+    // TODO: Use the above similar to these
+    // TODO: Wrap these
     VkCommandPool commandPool = 0;
     {
         VkCommandPoolCreateInfo info =
@@ -515,7 +565,7 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
         };
         if (!VK_VALID(vkAllocateCommandBuffers(result.logicalDevice, &info, &drawCmdBuffer)))
             Post(0);
-		result.drawCmdBuffer = drawCmdBuffer;
+        result.drawCmdBuffer = drawCmdBuffer;
     }
 
     VkRenderPass renderPass = 0;
@@ -540,9 +590,9 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     subpass.pColorAttachments = &ref;
 
     {
-        VkRenderPassCreateInfo info = 
+        VkRenderPassCreateInfo info =
         {
-			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             .attachmentCount = 1,
             .pAttachments = pass,
             .subpassCount = 1,
@@ -550,17 +600,17 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
         };
         if (!VK_VALID(vkCreateRenderPass(result.logicalDevice, &info, 0, &renderPass)))
             Post(0);
-		result.renderPass = renderPass;
+        result.renderPass = renderPass;
     }
 
     VkImageView frameBufferAttachments = 0;
     VkFramebuffer* frameBuffers = allocate(swapChainCount * sizeof(VkFramebuffer));
     if (!frameBuffers)
-		Post(0);
+        Post(0);
     {
-		VkFramebufferCreateInfo info = 
+        VkFramebufferCreateInfo info =
         {
-			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .attachmentCount = 1,
             .pAttachments = &frameBufferAttachments,
             .width = result.surfaceWidth,
@@ -569,10 +619,10 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
             .renderPass = renderPass,
         };
         for (u32 i = 0; i < swapChainCount; ++i) {
-			frameBufferAttachments = imageViews[i];
-			if (!VK_VALID(vkCreateFramebuffer(result.logicalDevice, &info, 0, &frameBuffers[i])))
+            frameBufferAttachments = imageViews[i];
+            if (!VK_VALID(vkCreateFramebuffer(result.logicalDevice, &info, 0, &frameBuffers[i])))
                 Post(0);
-			result.frameBuffers[i] = frameBuffers[i];
+            result.frameBuffers[i] = frameBuffers[i];
         }
     }
 
@@ -596,5 +646,5 @@ VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow)
     Post(result.semaphoreImageAvailable);
     Post(result.semaphoreRenderFinished);
 
-    return result;
+    return calloc(1, sizeof(result));
 }

@@ -6,9 +6,21 @@ Header for a platform independent renderer class, which performs Metal setup and
 */
 
 #import <MetalKit/MetalKit.h>
+#import <UIKit/UIKit.h>
+#import <MoltenVK/mvk_vulkan.h>
+#import "platform.h"
 
+#if 0
+// For Metal
 @interface AAPLRenderer : NSObject<MTKViewDelegate>
 
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)mtkView;
+
+@end
+#endif
+
+@interface VulkanView : UIView
+@property (nonatomic) VulkanContext* context;  // Strong property, ARC retains VulkanContext
+- (void)renderFrame;
 
 @end

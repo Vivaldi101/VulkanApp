@@ -26,6 +26,7 @@ typedef float f32;
 typedef double f64;
 
 typedef struct OSXPlatformWindow OSXPlatformWindow;
+
 // +1 more for min images used for double buffering to avoid implementation stalls
 #define VULKAN_IMAGE_COUNT 3		// TODO: This is dumb - we need to query the swapchain count from vulkan
 typedef struct VulkanContext
@@ -58,7 +59,7 @@ OSXPlatformWindow* platformCreateWindow(u32 w, u32 h, const char* title, u32 fla
 void platformRun(VulkanContext* context);
 
 // Vulkan
-VulkanContext vulkanInitialize(OSXPlatformWindow* platformWindow);
+VulkanContext* vulkanInitialize(OSXPlatformWindow* platformWindow);
 void vulkanDeinitialize(VulkanContext* context);
-VulkanContext OSXVulkanInitialize(OSXPlatformWindow* platformWindow);
+VulkanContext* OSXVulkanInitialize(OSXPlatformWindow* platformWindow);
 void VulkanRender(VulkanContext* context);

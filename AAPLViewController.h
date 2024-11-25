@@ -14,10 +14,17 @@ Header for the cross-platform view controller.
 #define PlatformViewController NSViewController
 #endif
 
-#import <MetalKit/MetalKit.h>
-
+#import "platform.h"
 #import "AAPLRenderer.h"
 
-@interface AAPLViewController : PlatformViewController
+@interface VulkanViewController : PlatformViewController
+
+@property (nonatomic, strong) VulkanView *vulkanView;
+
+@property (nonatomic, assign) OSXPlatformWindow *platformWindow;
+
+@property (nonatomic, strong) CADisplayLink *displayLink;
+
++ (UIWindow*)platformGetWindow:(OSXPlatformWindow*)platformWindow;
 
 @end
